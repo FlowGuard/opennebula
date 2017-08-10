@@ -2,7 +2,7 @@ FROM ubuntu:xenial
 ENV container docker
 
 RUN apt-get update && \
-    apt-get install -y curl wget openssh-server openssh-client lsb-release python-pip && \
+    apt-get install -y curl wget openssh-server openssh-client lsb-release python-pip ceph-common ceph-fs-common && \
     wget -q -O- https://downloads.opennebula.org/repo/Debian/repo.key | apt-key add - && \
     echo "deb http://downloads.opennebula.org/repo/5.4/Ubuntu/16.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
     apt-get update && \
