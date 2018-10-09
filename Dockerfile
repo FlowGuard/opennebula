@@ -13,6 +13,7 @@ RUN apt-get update && \
 
 COPY start.sh start-as-oneadmin.sh /
 COPY oned.conf.tpl /etc/one/
+COPY vmm_exec_kvm.conf /etc/one/vmm_exec/
 
 RUN echo > /etc/one/oned.conf && \
     chown oneadmin:oneadmin /etc/one/oned.conf /etc/one/oned.conf.tpl && \
