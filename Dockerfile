@@ -19,7 +19,8 @@ RUN echo > /etc/one/oned.conf && \
     mv /var/lib/one /var/lib/one.orig && \
     rm /var/lib/one.orig/.one/* && \
     chown -R oneadmin /etc/ssh && \
-    mkdir -p /var/run/sshd
+    mkdir -p /var/run/sshd && \
+    mv /etc/one/sunstone-views /etc/sunstone-views 
 
 EXPOSE 2222 29876 2633 9869 4124
 
