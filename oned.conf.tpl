@@ -6,9 +6,12 @@
 # Daemon configuration attributes
 #-------------------------------------------------------------------------------
 #  MANAGER_TIMER: Time in seconds the core uses to evaluate periodical functions.
-#  MONITORING_INTERVAL cannot have a smaller value than MANAGER_TIMER.
+#  MONITORING_INTERVALS cannot have a smaller value than MANAGER_TIMER.
 #
-#  MONITORING_INTERVAL: Time in seconds between host and VM monitorization.
+#  MONITORING_INTERVAL_HOST: Time in seconds between host monitorization.
+#  MONITORING_INTERVAL_VM: Time in seconds between VM monitorization.
+#  MONITORING_INTERVAL_MARKET: Time in seconds between market monitorization.
+#  MONITORING_INTERVAL_DATASTORE: Time in seconds between image monitorization.
 #
 #  MONITORING_THREADS: Max. number of threads used to process monitor messages
 #
@@ -38,6 +41,7 @@
 #   user    : (mysql) user's MySQL login ID
 #   passwd  : (mysql) the password for user
 #   db_name : (mysql) the database name
+#   connections: (mysql) number of max. connections to mysql server
 #
 #  VNC_PORTS: VNC port pool for automatic VNC port assignment, if possible the
 #  port will be set to ``START`` + ``VMID``
@@ -63,7 +67,11 @@ LOG = [
 
 #MANAGER_TIMER = 15
 
-MONITORING_INTERVAL = 60
+MONITORING_INTERVAL_HOST      = 180
+MONITORING_INTERVAL_VM        = 180
+MONITORING_INTERVAL_DATASTORE = 300
+MONITORING_INTERVAL_MARKET    = 600
+
 MONITORING_THREADS  = 50
 
 #HOST_PER_INTERVAL               = 15
@@ -81,7 +89,6 @@ LISTEN_ADDRESS = "0.0.0.0"
 
 #DB = [ BACKEND = "sqlite" ]
 
-# Sample configuration for MySQL
 DB = [ BACKEND = "mysql",
        SERVER  = "{{ MYSQL_HOST }}",
        PORT    = {{ MYSQL_PORT|default(3306) }},
@@ -94,10 +101,20 @@ VNC_PORTS = [
 #    RESERVED = "6800, 6801, 6810:6820, 9869"
 ]
 
+#*******************************************************************************
+# API configuration attributes
+#-------------------------------------------------------------------------------
+#  VM_SUBMIT_ON_HOLD: Forces VMs to be created on hold state instead of pending.
+#  Values: YES or NO.
+#  API_LIST_ORDER: Sets order (by ID) of elements in list API calls.
+#  Values: ASC (ascending order) or DESC (descending order)
+#*******************************************************************************
+#
+#API_LIST_ORDER = "DESC"
 #VM_SUBMIT_ON_HOLD = "NO"
 
 #*******************************************************************************
-# Federation configuration attributes
+# Federation & HA configuration attributes
 #-------------------------------------------------------------------------------
 # Control the federation capabilities of oned. Operation in a federated setup
 # requires a special DB configuration.
@@ -108,15 +125,72 @@ VNC_PORTS = [
 #       MASTER     this oned is the master zone of the federation
 #       SLAVE      this oned is a slave zone
 #   ZONE_ID: The zone ID as returned by onezone command
+#   SERVER_ID: ID identifying this server in the zone as returned by the
+#   onezone server-add command. This ID controls the HA configuration of
+#   OpenNebula:
+#     -1 (default) OpenNebula will operate in "solo" mode no HA
+#     <id> Operate in HA (leader election and state replication)
 #   MASTER_ONED: The xml-rpc endpoint of the master oned, e.g.
 #   http://master.one.org:2633/RPC2
+#
+#
+#   RAFT: Algorithm attributes
+#     LIMIT_PURGE: Number of logs that will be deleted on each purge.
+#     LOG_RETENTION: Number of DB log records kept, it determines the
+#     synchronization window across servers and extra storage space needed.
+#     LOG_PURGE_TIMEOUT: How often applied records are purged according the log
+#     retention value. (in seconds)
+#     ELECTION_TIMEOUT_MS: Timeout to start a election process if no heartbeat
+#     or log is received from leader.
+#     BROADCAST_TIMEOUT_MS: How often heartbeats are sent to  followers.
+#     XMLRPC_TIMEOUT_MS: To timeout raft related API calls. To set an infinite
+#     timeout set this value to 0.
+#
+#   RAFT_LEADER_HOOK: Executed when a server transits from follower->leader
+#     The purpose of this hook is to configure the Virtual IP.
+#     COMMAND: raft/vip.sh is a fully working script, this should not be changed
+#     ARGUMENTS: <interface> and <ip_cidr> must be replaced. For example
+#                ARGUMENTS = "leader ens1 10.0.0.2/24"
+#
+#   RAFT_FOLLOWER_HOOK: Executed when a server transits from leader->follower
+#     The purpose of this hook is to configure the Virtual IP.
+#     COMMAND: raft/vip.sh is a fully working script, this should not be changed
+#     ARGUMENTS: <interface> and <ip_cidr> must be replaced. For example
+#                ARGUMENTS = "follower ens1 10.0.0.2/24"
+#
+#  NOTE: Timeout tunning depends on the latency of the servers (network and load)
+#  as well as the max downtime tolerated by the system. Timeouts needs to be
+#  greater than 10ms
+#
 #*******************************************************************************
 
 FEDERATION = [
-    MODE        = "STANDALONE",
-    ZONE_ID     = 0,
-    MASTER_ONED = ""
+    MODE          = "STANDALONE",
+    ZONE_ID       = 0,
+    SERVER_ID     = -1,
+    MASTER_ONED   = ""
 ]
+
+RAFT = [
+    LIMIT_PURGE          = 100000,
+    LOG_RETENTION        = 500000,
+    LOG_PURGE_TIMEOUT    = 600,
+    ELECTION_TIMEOUT_MS  = 2500,
+    BROADCAST_TIMEOUT_MS = 500,
+    XMLRPC_TIMEOUT_MS    = 450
+]
+
+# Executed when a server transits from follower->leader
+# RAFT_LEADER_HOOK = [
+#     COMMAND = "raft/vip.sh",
+#     ARGUMENTS = "leader <interface> <ip_cidr>"
+# ]
+
+# Executed when a server transits from leader->follower
+# RAFT_FOLLOWER_HOOK = [
+#     COMMAND = "raft/vip.sh",
+#     ARGUMENTS = "follower <interface> <ip_cidr>"
+# ]
 
 #*******************************************************************************
 # Default showback cost
@@ -164,11 +238,14 @@ DEFAULT_COST = [
 #     %m -- method name
 #     %u -- user id
 #     %U -- user name
-#     %l -- param list
+#     %l[number] -- param list and number of characters (optional) to print 
+#                   each parameter, default is 20. Example: %l300
 #     %p -- user password
 #     %g -- group id
 #     %G -- group name
 #     %a -- auth token
+#     %A -- client IP address (only IPv4 supported)
+#     %P -- client TCP port
 #     %% -- %
 #*******************************************************************************
 
@@ -179,7 +256,7 @@ DEFAULT_COST = [
 #TIMEOUT            = 15
 #RPC_LOG            = NO
 #MESSAGE_SIZE       = 1073741824
-#LOG_CALL_FORMAT    = "Req:%i UID:%u %m invoked %l"
+#LOG_CALL_FORMAT    = "Req:%i UID:%u IP:%A %m invoked %l20"
 
 #*******************************************************************************
 # Physical Networks configuration
@@ -246,16 +323,26 @@ VXLAN_IDS = [
 #       vd        KVM virtual disk
 #
 #  DEFAULT_CDROM_DEVICE_PREFIX: Same as above but for CDROM devices.
+#
+#  DEFAULT_IMAGE_PERSISTENT: Control the default value for the PERSISTENT
+#  attribute on image creation (oneimage clone, onevm disk-saveas). If blank
+#  images will inherit the persistent attribute from the base image.
+#
+#  DEFAULT_IMAGE_PERSISTENT_NEW: Control the default value for the PERSISTENT
+#  attribute on image creation (oneimage create). By default images are no
+#  persistent if not set.
 #*******************************************************************************
 
 #DATASTORE_LOCATION  = /var/lib/one/datastores
 
 DATASTORE_CAPACITY_CHECK = "yes"
 
-DEFAULT_IMAGE_TYPE    = "OS"
-DEFAULT_DEVICE_PREFIX = "hd"
-
+DEFAULT_DEVICE_PREFIX       = "hd"
 DEFAULT_CDROM_DEVICE_PREFIX = "hd"
+
+DEFAULT_IMAGE_TYPE           = "OS"
+#DEFAULT_IMAGE_PERSISTENT     = ""
+#DEFAULT_IMAGE_PERSISTENT_NEW = ""
 
 #*******************************************************************************
 # Information Driver Configuration
@@ -284,14 +371,14 @@ DEFAULT_CDROM_DEVICE_PREFIX = "hd"
 #    -f  Interval in seconds to flush collected information (default 5)
 #    -t  Number of threads for the server (default 50)
 #    -i  Time in seconds of the monitorization push cycle. This parameter must
-#        be smaller than MONITORING_INTERVAL, otherwise push monitorization will
+#        be smaller than MONITORING_INTERVAL_HOST, otherwise push monitorization will
 #        not be effective.
 #    -w  Timeout in seconds to execute external commands (default unlimited)
 #-------------------------------------------------------------------------------
 IM_MAD = [
       NAME       = "collectd",
       EXECUTABLE = "collectd",
-      ARGUMENTS  = "-p 4124 -f 5 -t 50 -i 20" ]
+      ARGUMENTS  = "-p 4124 -f 5 -t 50 -i 60" ]
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
@@ -304,7 +391,7 @@ IM_MAD = [
       NAME          = "kvm",
       SUNSTONE_NAME = "KVM",
       EXECUTABLE    = "one_im_ssh",
-      ARGUMENTS     = "-r 3 -t 15 kvm" ]
+      ARGUMENTS     = "-r 3 -t 15 -w 90 kvm" ]
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
@@ -317,7 +404,7 @@ IM_MAD = [
 #       NAME          = "kvm",
 #       SUNSTONE_NAME = "kvm-ssh",
 #       EXECUTABLE    = "one_im_ssh",
-#       ARGUMENTS     = "-r 3 -t 15 kvm-probes" ]
+#       ARGUMENTS     = "-r 3 -t 15 -w 90 kvm-probes" ]
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
@@ -326,11 +413,11 @@ IM_MAD = [
 #    -t number of threads, i.e. number of hosts monitored at the same time
 #    -w Timeout in seconds to execute external commands (default unlimited)
 #-------------------------------------------------------------------------------
-#IM_MAD = [
-#      NAME          = "vcenter",
-#      SUNSTONE_NAME = "VMWare vCenter",
-#      EXECUTABLE    = "one_im_sh",
-#      ARGUMENTS     = "-c -t 15 -r 0 vcenter" ]
+IM_MAD = [
+      NAME          = "vcenter",
+      SUNSTONE_NAME = "VMWare vCenter",
+      EXECUTABLE    = "one_im_sh",
+      ARGUMENTS     = "-c -t 15 -r 0 vcenter" ]
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
@@ -357,6 +444,18 @@ IM_MAD = [
 #      SUNSTONE_NAME = "Microsoft Azure",
 #      EXECUTABLE    = "one_im_sh",
 #      ARGUMENTS     = "-c -t 1 -r 0 az" ]
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#  Hybrid OpenNebula Information Driver Manager Configuration
+#    -r number of retries when monitoring a host
+#    -t number of threads, i.e. number of hosts monitored at the same time
+#-------------------------------------------------------------------------------
+# IM_MAD = [
+#       NAME          = "one",
+#       SUNSTONE_NAME = "OpenNebula",
+#       EXECUTABLE    = "one_im_sh",
+#       ARGUMENTS     = "-c -t 1 -r 0 one" ]
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
@@ -442,7 +541,7 @@ VM_MAD = [
     KEEP_SNAPSHOTS = "no",
     IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
         resume, delete, reboot, reboot-hard, resched, unresched, disk-attach,
-        disk-detach, nic-attach, nic-detach, snap-create, snap-delete"
+        disk-detach, nic-attach, nic-detach, snapshot-create, snapshot-delete"
 ]
 
 #-------------------------------------------------------------------------------
@@ -457,19 +556,19 @@ VM_MAD = [
 #       defaults to 'suspend'.
 #    -w Timeout in seconds to execute external commands (default unlimited)
 #-------------------------------------------------------------------------------
-#VM_MAD = [
-#    NAME           = "vcenter",
-#    SUNSTONE_NAME  = "VMWare vCenter",
-#    EXECUTABLE     = "one_vmm_sh",
-#    ARGUMENTS      = "-p -t 15 -r 0 vcenter -s sh",
-#    DEFAULT        = "vmm_exec/vmm_exec_vcenter.conf",
-#    TYPE           = "xml",
-#    KEEP_SNAPSHOTS = "yes",
-#    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
-#        resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
-#        poweroff-hard, disk-attach, disk-detach, nic-attach, nic-detach,
-#        snap-create, snap-delete"
-#]
+VM_MAD = [
+    NAME           = "vcenter",
+    SUNSTONE_NAME  = "VMWare vCenter",
+    EXECUTABLE     = "one_vmm_sh",
+    ARGUMENTS      = "-p -t 15 -r 0 vcenter -s sh",
+    DEFAULT        = "vmm_exec/vmm_exec_vcenter.conf",
+    TYPE           = "xml",
+    KEEP_SNAPSHOTS = "yes",
+    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
+        resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
+        poweroff-hard, disk-attach, disk-detach, nic-attach, nic-detach,
+        snapshot-create, snapshot-delete, migrate, live-migrate"
+]
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
@@ -512,6 +611,25 @@ VM_MAD = [
 #        snap-create, snap-delete"
 #]
 #-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#  Hybrid OpenNebula Virtualization Driver Manager Configuration
+#    -r number of retries when monitoring a host
+#    -t number of threads, i.e. number of actions performed at the same time
+#-------------------------------------------------------------------------------
+# VM_MAD = [
+#     NAME           = "one",
+#     SUNSTONE_NAME  = "OpenNebula",
+#     EXECUTABLE     = "one_vmm_sh",
+#     ARGUMENTS      = "-t 15 -r 0 one",
+#     TYPE           = "xml",
+#     KEEP_SNAPSHOTS = "no",
+#     IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
+#         resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
+#         poweroff-hard"
+# ]
+#-------------------------------------------------------------------------------
+
 
 #-------------------------------------------------------------------------------
 #  Dummy Virtualization Driver Configuration
@@ -559,7 +677,7 @@ TM_MAD = [
 
 DATASTORE_MAD = [
     EXECUTABLE = "one_datastore",
-    ARGUMENTS  = "-t 15 -d dummy,fs,lvm,ceph,dev,iscsi_libvirt,vcenter -s shared,ssh,ceph,fs_lvm,qcow2"
+    ARGUMENTS  = "-t 15 -d dummy,fs,lvm,ceph,dev,iscsi_libvirt,vcenter -s shared,ssh,ceph,fs_lvm,qcow2,vcenter"
 ]
 
 #*******************************************************************************
@@ -702,8 +820,21 @@ IPAM_MAD = [
 # Please note: In a Federation, User and Group hooks can only be defined in
 # the master OpenNebula.
 #-------------------------------------------------------------------------------
+
 HM_MAD = [
     EXECUTABLE = "one_hm" ]
+
+#VNET_HOOK = [
+#    name      = "vcenter_net_create",
+#    on        = "CREATE",
+#    command   = "vcenter/create_vcenter_net.rb",
+#    arguments = "$ID $TEMPLATE"]
+
+#VNET_HOOK = [
+#    name      = "vcenter_net_delete",
+#    on        = "REMOVE",
+#    command   = "vcenter/delete_vcenter_net.rb",
+#    arguments = "$ID $TEMPLATE"]
 
 #*******************************************************************************
 # Fault Tolerance Hooks
@@ -775,7 +906,7 @@ AUTH_MAD = [
 
 SESSION_EXPIRATION_TIME = 900
 
-ENABLE_OTHER_PERMISSIONS = "YES"
+#ENABLE_OTHER_PERMISSIONS = "YES"
 
 DEFAULT_UMASK = 177
 
@@ -787,6 +918,79 @@ DEFAULT_UMASK = 177
 #*******************************************************************************
 
 #ONEGATE_ENDPOINT = "http://frontend:5030"
+
+#*******************************************************************************
+# VM Operations Permissions
+#******************************************************************************
+# The following parameters define the operations associated to the ADMIN,
+# MANAGE and USE permissions. Note that some VM operations require additional
+# permissions on other objects. Also some operations refers to a class of
+# actions:
+#   - disk-snapshot, includes create, delete and revert actions
+#   - disk-attach, includes attach and detach actions
+#   - nic-attach, includes attach and detach actions
+#   - snapshot, includes create, delete and revert actions
+#   - resched, includes resched and unresched actions
+#******************************************************************************
+
+VM_ADMIN_OPERATIONS  = "migrate, delete, recover, retry, deploy, resched"
+
+VM_MANAGE_OPERATIONS = "undeploy, hold, release, stop, suspend, resume, reboot,
+    poweroff, disk-attach, nic-attach, disk-snapshot, terminate, disk-resize,
+    snapshot, updateconf, rename, resize, update, disk-saveas"
+
+VM_USE_OPERATIONS    = ""
+
+#*******************************************************************************
+# Default Permissions for VDC ACL rules
+#*******************************************************************************
+# Default ACL rules created when resource is added to a VDC. The following
+# attributes configures the permissions granted to the VDC group for each
+# resource types:
+#   DEFAULT_VDC_HOST_ACL: permissions granted on hosts added to a VDC.
+#   DEFAULT_VDC_NET_ACL: permissions granted on vnets added to a VDC.
+#   DEFAULT_VDC_DATASTORE_ACL: permissions granted on datastores to a VDC.
+#
+#   DEFAULT_VDC_CLUSTER_HOST_ACL: permissions granted to cluster hosts when a
+#   cluster is added to the VDC.
+#   DEFAULT_VDC_CLUSTER_NET_ACL: permissions granted to cluster vnets when a
+#   cluster is added to the VDC.
+#   DEFAULT_VDC_CLUSTER_DATASTORE_ACL: permissions granted to cluster datastores
+#   when a cluster is added to the VDC.
+#
+# When defining the permissions you can use "" or "-" to not add any rule to
+# that specific resource. Also you can combine several permissions with "+",
+# for exampl "MANAGE+USE". Valid permissions are USE, MANAGE or ADMIN.
+#
+# Example:
+# DEFAULT_VDC_HOST_ACL      = "MANAGE"
+# Adds @<gid> HOST/#<hid> MANAGE #<zid> when a host is added to the VDC,
+# eg. onevdc addhost <vdc> <zid> <hid>
+#
+# DEFAULT_VDC_VNET_ACL       = "USE"
+# Adds @<gid> NET/#<vnetid> USE #<zid> when a vnet is added to the VDC,
+# eg. onevdc addvnet <vdc> <zid> <vnetid>
+#
+# DEFAULT_VDC_DATASTORE_ACL = "USE"
+# Adds @<gid> DATASTORE/#<dsid> USE #<zid> when a vnet is added to the VDC,
+# eg. onevdc adddatastore <vdc> <zid> <dsid>
+#
+# DEFAULT_VDC_CLUSTER_HOST_ACL      = "MANAGE"
+# DEFAULT_VDC_CLUSTER_NET_ACL       = "USE"
+# DEFAULT_VDC_CLUSTER_DATASTORE_ACL = "USE"
+# Adds:
+#   @<gid> HOST/%<cid> MANAGE #<zid>
+#   @<gid> DATASTORE+NET/%<cid> USE #<zid>
+# when a cluster is added to the VDC, e.g. onevdc addcluster <vdc> <zid> <cid>
+#*******************************************************************************
+
+DEFAULT_VDC_HOST_ACL      = "MANAGE"
+DEFAULT_VDC_VNET_ACL      = "USE"
+DEFAULT_VDC_DATASTORE_ACL = "USE"
+
+DEFAULT_VDC_CLUSTER_HOST_ACL      = "MANAGE"
+DEFAULT_VDC_CLUSTER_NET_ACL       = "USE"
+DEFAULT_VDC_CLUSTER_DATASTORE_ACL = "USE"
 
 #*******************************************************************************
 # Restricted Attributes Configuration
@@ -804,25 +1008,49 @@ VM_RESTRICTED_ATTR = "NIC/INBOUND_PEAK_KB"
 VM_RESTRICTED_ATTR = "NIC/OUTBOUND_AVG_BW"
 VM_RESTRICTED_ATTR = "NIC/OUTBOUND_PEAK_BW"
 VM_RESTRICTED_ATTR = "NIC/OUTBOUND_PEAK_KB"
+VM_RESTRICTED_ATTR = "NIC/OPENNEBULA_MANAGED"
+VM_RESTRICTED_ATTR = "NIC/VCENTER_INSTANCE_ID"
+VM_RESTRICTED_ATTR = "NIC/VCENTER_NET_REF"
+VM_RESTRICTED_ATTR = "NIC/VCENTER_PORTGROUP_TYPE"
 VM_RESTRICTED_ATTR = "NIC_DEFAULT/MAC"
 VM_RESTRICTED_ATTR = "NIC_DEFAULT/VLAN_ID"
 VM_RESTRICTED_ATTR = "NIC_DEFAULT/BRIDGE"
 VM_RESTRICTED_ATTR = "DISK/TOTAL_BYTES_SEC"
+VM_RESTRICTED_ATTR = "DISK/TOTAL_BYTES_SEC_MAX_LENGTH"
+VM_RESTRICTED_ATTR = "DISK/TOTAL_BYTES_SEC_MAX"
 VM_RESTRICTED_ATTR = "DISK/READ_BYTES_SEC"
+VM_RESTRICTED_ATTR = "DISK/READ_BYTES_SEC_MAX_LENGTH"
+VM_RESTRICTED_ATTR = "DISK/READ_BYTES_SEC_MAX"
 VM_RESTRICTED_ATTR = "DISK/WRITE_BYTES_SEC"
+VM_RESTRICTED_ATTR = "DISK/WRITE_BYTES_SEC_MAX_LENGTH"
+VM_RESTRICTED_ATTR = "DISK/WRITE_BYTES_SEC_MAX"
 VM_RESTRICTED_ATTR = "DISK/TOTAL_IOPS_SEC"
+VM_RESTRICTED_ATTR = "DISK/TOTAL_IOPS_SEC_MAX_LENGTH"
+VM_RESTRICTED_ATTR = "DISK/TOTAL_IOPS_SEC_MAX"
 VM_RESTRICTED_ATTR = "DISK/READ_IOPS_SEC"
+VM_RESTRICTED_ATTR = "DISK/READ_IOPS_SEC_MAX_LENGTH"
+VM_RESTRICTED_ATTR = "DISK/READ_IOPS_SEC_MAX"
 VM_RESTRICTED_ATTR = "DISK/WRITE_IOPS_SEC"
+VM_RESTRICTED_ATTR = "DISK/WRITE_IOPS_SEC_MAX_LENGTH"
+VM_RESTRICTED_ATTR = "DISK/WRITE_IOPS_SEC_MAX"
+VM_RESTRICTED_ATTR = "DISK/OPENNEBULA_MANAGED"
+VM_RESTRICTED_ATTR = "DISK/VCENTER_DS_REF"
+VM_RESTRICTED_ATTR = "DISK/VCENTER_INSTANCE_ID"
 #VM_RESTRICTED_ATTR = "DISK/SIZE"
 VM_RESTRICTED_ATTR = "DISK/ORIGINAL_SIZE"
+VM_RESTRICTED_ATTR = "DISK/SIZE_PREV"
 VM_RESTRICTED_ATTR = "CPU_COST"
 VM_RESTRICTED_ATTR = "MEMORY_COST"
 VM_RESTRICTED_ATTR = "DISK_COST"
 VM_RESTRICTED_ATTR = "PCI"
 VM_RESTRICTED_ATTR = "EMULATOR"
+VM_RESTRICTED_ATTR = "RAW"
+VM_RESTRICTED_ATTR = "USER_PRIORITY"
 VM_RESTRICTED_ATTR = "USER_INPUTS/CPU"
 VM_RESTRICTED_ATTR = "USER_INPUTS/MEMORY"
 VM_RESTRICTED_ATTR = "USER_INPUTS/VCPU"
+VM_RESTRICTED_ATTR = "VCENTER_VM_FOLDER"
+VM_RESTRICTED_ATTR = "VCENTER_ESX_HOST"
 
 #VM_RESTRICTED_ATTR = "RANK"
 #VM_RESTRICTED_ATTR = "SCHED_RANK"
@@ -830,6 +1058,7 @@ VM_RESTRICTED_ATTR = "USER_INPUTS/VCPU"
 #VM_RESTRICTED_ATTR = "SCHED_REQUIREMENTS"
 
 IMAGE_RESTRICTED_ATTR = "SOURCE"
+IMAGE_RESTRICTED_ATTR = "VCENTER_IMPORTED"
 
 #*******************************************************************************
 # The following restricted attributes only apply to VNets that are a reservation.
@@ -840,6 +1069,10 @@ VNET_RESTRICTED_ATTR = "VN_MAD"
 VNET_RESTRICTED_ATTR = "PHYDEV"
 VNET_RESTRICTED_ATTR = "VLAN_ID"
 VNET_RESTRICTED_ATTR = "BRIDGE"
+VNET_RESTRICTED_ATTR = "CONF"
+VNET_RESTRICTED_ATTR = "BRIDGE_CONF"
+VNET_RESTRICTED_ATTR = "OVS_BRIDGE_CONF"
+VNET_RESTRICTED_ATTR = "IP_LINK_CONF"
 
 VNET_RESTRICTED_ATTR = "AR/VN_MAD"
 VNET_RESTRICTED_ATTR = "AR/PHYDEV"
@@ -869,6 +1102,7 @@ VNET_RESTRICTED_ATTR = "AR/BRIDGE"
 
 INHERIT_DATASTORE_ATTR  = "CEPH_HOST"
 INHERIT_DATASTORE_ATTR  = "CEPH_SECRET"
+INHERIT_DATASTORE_ATTR  = "CEPH_KEY"
 INHERIT_DATASTORE_ATTR  = "CEPH_USER"
 INHERIT_DATASTORE_ATTR  = "CEPH_CONF"
 INHERIT_DATASTORE_ATTR  = "POOL_NAME"
@@ -886,10 +1120,18 @@ INHERIT_DATASTORE_ATTR  = "GLUSTER_HOST"
 INHERIT_DATASTORE_ATTR  = "GLUSTER_VOLUME"
 
 INHERIT_DATASTORE_ATTR  = "DISK_TYPE"
-INHERIT_DATASTORE_ATTR  = "ADAPTER_TYPE"
+INHERIT_DATASTORE_ATTR  = "ALLOW_ORPHANS"
+
+INHERIT_DATASTORE_ATTR  = "VCENTER_ADAPTER_TYPE"
+INHERIT_DATASTORE_ATTR  = "VCENTER_DISK_TYPE"
+INHERIT_DATASTORE_ATTR  = "VCENTER_DS_REF"
+INHERIT_DATASTORE_ATTR  = "VCENTER_DS_IMAGE_DIR"
+INHERIT_DATASTORE_ATTR  = "VCENTER_DS_VOLATILE_DIR"
+INHERIT_DATASTORE_ATTR  = "VCENTER_INSTANCE_ID"
 
 INHERIT_IMAGE_ATTR      = "DISK_TYPE"
-INHERIT_IMAGE_ATTR      = "ADAPTER_TYPE"
+INHERIT_IMAGE_ATTR      = "VCENTER_ADAPTER_TYPE"
+INHERIT_IMAGE_ATTR      = "VCENTER_DISK_TYPE"
 
 INHERIT_VNET_ATTR       = "VLAN_TAGGED_ID"
 INHERIT_VNET_ATTR       = "FILTER_IP_SPOOFING"
@@ -901,6 +1143,17 @@ INHERIT_VNET_ATTR       = "INBOUND_PEAK_KB"
 INHERIT_VNET_ATTR       = "OUTBOUND_AVG_BW"
 INHERIT_VNET_ATTR       = "OUTBOUND_PEAK_BW"
 INHERIT_VNET_ATTR       = "OUTBOUND_PEAK_KB"
+INHERIT_VNET_ATTR       = "CONF"
+INHERIT_VNET_ATTR       = "BRIDGE_CONF"
+INHERIT_VNET_ATTR       = "OVS_BRIDGE_CONF"
+INHERIT_VNET_ATTR       = "IP_LINK_CONF"
+
+INHERIT_VNET_ATTR       = "VCENTER_NET_REF"
+INHERIT_VNET_ATTR       = "VCENTER_SWITCH_NAME"
+INHERIT_VNET_ATTR       = "VCENTER_SWITCH_NPORTS"
+INHERIT_VNET_ATTR       = "VCENTER_PORTGROUP_TYPE"
+INHERIT_VNET_ATTR       = "VCENTER_CCR_REF"
+INHERIT_VNET_ATTR       = "VCENTER_INSTANCE_ID"
 
 #*******************************************************************************
 # Transfer Manager Driver Behavior Configuration
@@ -924,6 +1177,7 @@ INHERIT_VNET_ATTR       = "OUTBOUND_PEAK_KB"
 #            among the different hosts or not. Valid values: "yes" or "no"
 #   ds_migrate : The driver allows migrations across datastores. Valid values:
 #               "yes" or "no". Note: THIS ONLY APPLIES TO SYSTEM DS.
+#   allow_orphans: Snapshots can live without parents
 #*******************************************************************************
 
 TM_MAD_CONF = [
@@ -937,15 +1191,18 @@ TM_MAD_CONF = [
 
 TM_MAD_CONF = [
     NAME = "shared", LN_TARGET = "NONE", CLONE_TARGET = "SYSTEM", SHARED = "YES",
-    DS_MIGRATE = "YES"
+    DS_MIGRATE = "YES", TM_MAD_SYSTEM = "ssh", LN_TARGET_SSH = "SYSTEM",
+    CLONE_TARGET_SSH = "SYSTEM", DISK_TYPE_SSH = "FILE"
 ]
 
 TM_MAD_CONF = [
-    NAME = "fs_lvm", LN_TARGET = "SYSTEM", CLONE_TARGET = "SYSTEM", SHARED="YES"
+    NAME = "fs_lvm", LN_TARGET = "SYSTEM", CLONE_TARGET = "SYSTEM", SHARED="YES",
+    DRIVER = "raw"
 ]
 
 TM_MAD_CONF = [
-    NAME = "qcow2", LN_TARGET = "NONE", CLONE_TARGET = "SYSTEM", SHARED = "YES"
+    NAME = "qcow2", LN_TARGET = "NONE", CLONE_TARGET = "SYSTEM", SHARED = "YES",
+    DRIVER = "qcow2"
 ]
 
 TM_MAD_CONF = [
@@ -955,7 +1212,8 @@ TM_MAD_CONF = [
 
 TM_MAD_CONF = [
     NAME = "ceph", LN_TARGET = "NONE", CLONE_TARGET = "SELF", SHARED = "YES",
-    DS_MIGRATE = "NO"
+    DS_MIGRATE = "NO", DRIVER = "raw", ALLOW_ORPHANS="yes", TM_MAD_SYSTEM = "ssh",
+    LN_TARGET_SSH = "SYSTEM", CLONE_TARGET_SSH = "SYSTEM", DISK_TYPE_SSH = "FILE"
 ]
 
 TM_MAD_CONF = [
@@ -968,7 +1226,7 @@ TM_MAD_CONF = [
 ]
 
 TM_MAD_CONF = [
-    NAME = "vcenter", LN_TARGET = "NONE", CLONE_TARGET = "NONE", SHARED = "YES"
+    NAME = "vcenter", LN_TARGET = "NONE", CLONE_TARGET = "SYSTEM", SHARED = "YES"
 ]
 
 #*******************************************************************************
@@ -1016,7 +1274,9 @@ DS_MAD_CONF = [
 ]
 
 DS_MAD_CONF = [
-    NAME = "vcenter", REQUIRED_ATTRS = "VCENTER_CLUSTER", PERSISTENT_ONLY = "YES",
+    NAME = "vcenter",
+    REQUIRED_ATTRS = "VCENTER_INSTANCE_ID,VCENTER_DS_REF,VCENTER_DC_REF",
+    PERSISTENT_ONLY = "NO",
     MARKETPLACE_ACTIONS = "export"
 ]
 
@@ -1123,3 +1383,4 @@ AUTH_MAD_CONF = [
     DRIVER_MANAGED_GROUPS = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
+
