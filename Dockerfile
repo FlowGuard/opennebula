@@ -1,13 +1,14 @@
-FROM ubuntu:bionic
+FROM ubuntu:focal
 ENV container docker
 
-RUN apt-get update && \
-    apt-get install -y curl wget openssh-server openssh-client lsb-release python-pip ceph-common && \
-    wget -q -O- https://downloads.opennebula.org/repo/Debian/repo.key | apt-key add - && \
-    echo "deb http://downloads.opennebula.org/repo/5.8/Ubuntu/18.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
+RUN DEBIAN_FRONTEND=noninteractive \
+    ln -fs /usr/share/zoneinfo/Europe/Prague /etc/localtime && \
     apt-get update && \
-    apt-get install -y opennebula opennebula-sunstone opennebula-gate opennebula-flow && \
-    /usr/share/one/install_gems --yes && \
+    apt-get install -y curl wget openssh-server openssh-client lsb-release python3-pip ceph-common && \
+    wget -q -O- https://downloads.opennebula.org/repo/Debian/repo.key | apt-key add - && \
+    echo "deb https://downloads.opennebula.io/repo/6.0/Ubuntu/20.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
+    apt-get update && \
+    apt-get install -y opennebula opennebula-sunstone opennebula-fireedge opennebula-gate opennebula-flow opennebula-provision && \
     pip install envtpl && \
     apt-get clean
 
@@ -23,7 +24,7 @@ RUN echo > /etc/one/oned.conf && \
     mkdir -p /var/run/sshd && \
     mv /etc/one/sunstone-views /etc/sunstone-views 
 
-EXPOSE 2222 29876 2633 9869 4124
+EXPOSE 2222 2616 2633 4124 9869 29876
 
 VOLUME /var/lib/one
 VOLUME /etc/one

@@ -25,6 +25,7 @@ fi
 
 one start
 sunstone-server start
+fireedge-server start
 oneuser show
 
-exec tail -F /var/log/one/*.{log,errror}
+exec tail -F /var/log/one/*.{log,error}

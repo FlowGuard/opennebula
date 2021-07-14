@@ -8,30 +8,16 @@
 #  MANAGER_TIMER: Time in seconds the core uses to evaluate periodical functions.
 #  MONITORING_INTERVALS cannot have a smaller value than MANAGER_TIMER.
 #
-#  MONITORING_INTERVAL_HOST: Time in seconds between host monitorization.
-#  MONITORING_INTERVAL_VM: Time in seconds between VM monitorization.
 #  MONITORING_INTERVAL_MARKET: Time in seconds between market monitorization.
 #  MONITORING_INTERVAL_DATASTORE: Time in seconds between image monitorization.
+#  MONITORING_INTERVAL_DB_UPDATE: Time in seconds between DB writes of VM
+#  monitoring information. -1 to disable DB updating and 0 to write every update
 #
-#  MONITORING_THREADS: Max. number of threads used to process monitor messages
-#
-#  HOST_PER_INTERVAL: Number of hosts monitored in each interval.
-#  HOST_MONITORING_EXPIRATION_TIME: Time, in seconds, to expire monitoring
-#  information. Use 0 to disable HOST monitoring recording.
-#
-#  VM_INDIVIDUAL_MONITORING: VM monitoring information is obtained along with the
-#  host information. For some custom monitor drivers you may need activate the
-#  individual VM monitoring process.
-#  VM_PER_INTERVAL: Number of VMs monitored in each interval, if the individual
-#  VM monitoring is set to yes.
-#  VM_MONITORING_EXPIRATION_TIME: Time, in seconds, to expire monitoring
-#  information. Use 0 to disable VM monitoring recording.
+#  DS_MONITOR_VM_DISK: Number of MONIROTING_INTERVAL_DATASTORE intervals to monitor
+#  VM disks. 0 to disable. Only applies to fs and fs_lvm datastores
 #
 #  SCRIPTS_REMOTE_DIR: Remote path to store the monitoring and VM management
 #  scripts.
-#
-#  PORT: Port where oned will listen for xmlrpc calls.
-#  LISTEN_ADDRESS: Host IP to listen on for xmlrpc calls (default: all IPs).
 #
 #  DB: Configuration attributes for the database backend
 #   backend : can be sqlite or mysql (default is sqlite)
@@ -42,6 +28,13 @@
 #   passwd  : (mysql) the password for user
 #   db_name : (mysql) the database name
 #   connections: (mysql) number of max. connections to mysql server
+#   compare_binary: (mysql) compare strings using BINARY clause
+#                   makes name searches case sensitive.
+#   encoding: charset to use for the db connections
+#   timeout : (sqlite) timeout in ms for acquiring lock to DB,
+#             should be at least 100 ms
+#   errors_limit : number of consecutive DB errors to stop oned node in HA
+#                  default 25, use -1 to disable this feature
 #
 #  VNC_PORTS: VNC port pool for automatic VNC port assignment, if possible the
 #  port will be set to ``START`` + ``VMID``
@@ -56,8 +49,6 @@
 #      std       to use the default log stream (stderr) to use with systemd
 #   debug_level: 0 = ERROR, 1 = WARNING, 2 = INFO, 3 = DEBUG
 #
-#  VM_SUBMIT_ON_HOLD: Forces VMs to be created on hold state instead of pending.
-#  Values: YES or NO.
 #*******************************************************************************
 
 LOG = [
@@ -67,39 +58,48 @@ LOG = [
 
 #MANAGER_TIMER = 15
 
-MONITORING_INTERVAL_HOST      = 180
-MONITORING_INTERVAL_VM        = 180
 MONITORING_INTERVAL_DATASTORE = 300
 MONITORING_INTERVAL_MARKET    = 600
+MONITORING_INTERVAL_DB_UPDATE = 0
 
-MONITORING_THREADS  = 50
-
-#HOST_PER_INTERVAL               = 15
-#HOST_MONITORING_EXPIRATION_TIME = 43200
-
-#VM_INDIVIDUAL_MONITORING      = "no"
-#VM_PER_INTERVAL               = 5
-#VM_MONITORING_EXPIRATION_TIME = 14400
+#DS_MONITOR_VM_DISK = 10
 
 SCRIPTS_REMOTE_DIR=/var/tmp/one
 
-PORT = 2633
-
-LISTEN_ADDRESS = "0.0.0.0"
-
-#DB = [ BACKEND = "sqlite" ]
+# DB = [ BACKEND = "sqlite",
+#        TIMEOUT = 2500 ]
 
 DB = [ BACKEND = "mysql",
        SERVER  = "{{ MYSQL_HOST }}",
        PORT    = {{ MYSQL_PORT|default(3306) }},
        USER    = "{{ MYSQL_USER }}",
        PASSWD  = "{{ MYSQL_PASSWORD }}",
-       DB_NAME = "{{ MYSQL_DATABASE }}" ]
+       DB_NAME = "{{ MYSQL_DATABASE }}"
+       CONNECTIONS = 25,
+       COMPARE_BINARY = "no" ]
 
 VNC_PORTS = [
-    START    = 5900
-#    RESERVED = "6800, 6801, 6810:6820, 9869"
+    START    = 5900,
+    RESERVED = "32768:65536"
+    # RESERVED = "6800, 6801, 6810:6820, 9869"
 ]
+
+#*******************************************************************************
+# Server network and connection
+#-------------------------------------------------------------------------------
+#  PORT: Port where oned will listen for xmlrpc calls.
+#
+#  LISTEN_ADDRESS: Host IP to listen on for xmlrpc calls (default: all IPs).
+#
+#  HOSTNAME: This Hostname is used by OpenNebula daemon to connect to the
+#  frontend during drivers operations. If this variable is not set, OpenNebula
+#  will auto detect it. It can be in FQDN format, hostname or an IP
+
+PORT = 2633
+
+LISTEN_ADDRESS = "0.0.0.0"
+
+# HOSTNAME = "one-hostname"
 
 #*******************************************************************************
 # API configuration attributes
@@ -183,13 +183,13 @@ RAFT = [
 # Executed when a server transits from follower->leader
 # RAFT_LEADER_HOOK = [
 #     COMMAND = "raft/vip.sh",
-#     ARGUMENTS = "leader <interface> <ip_cidr>"
+#     ARGUMENTS = "leader interface ip_cidr [interface ip_cidr ...]"
 # ]
 
 # Executed when a server transits from leader->follower
 # RAFT_FOLLOWER_HOOK = [
 #     COMMAND = "raft/vip.sh",
-#     ARGUMENTS = "follower <interface> <ip_cidr>"
+#     ARGUMENTS = "follower interface ip_cidr [interface ip_cidr ...]"
 # ]
 
 #*******************************************************************************
@@ -238,7 +238,7 @@ DEFAULT_COST = [
 #     %m -- method name
 #     %u -- user id
 #     %U -- user name
-#     %l[number] -- param list and number of characters (optional) to print 
+#     %l[number] -- param list and number of characters (optional) to print
 #                   each parameter, default is 20. Example: %l300
 #     %p -- user password
 #     %g -- group id
@@ -337,7 +337,7 @@ VXLAN_IDS = [
 
 DATASTORE_CAPACITY_CHECK = "yes"
 
-DEFAULT_DEVICE_PREFIX       = "hd"
+DEFAULT_DEVICE_PREFIX       = "sd"
 DEFAULT_CDROM_DEVICE_PREFIX = "hd"
 
 DEFAULT_IMAGE_TYPE           = "OS"
@@ -345,124 +345,27 @@ DEFAULT_IMAGE_TYPE           = "OS"
 #DEFAULT_IMAGE_PERSISTENT_NEW = ""
 
 #*******************************************************************************
-# Information Driver Configuration
+# Monitor Daemon
 #*******************************************************************************
-# You can add more information managers with different configurations but make
-# sure it has different names.
+#  Monitor daemon, specific monitor drivers can be added in the monitord
+#  configuration file (monitord.conf)
 #
-#   name      : name for this information manager
+#   name       : OpenNebula name for the daemon
 #
-#   executable: path of the information driver executable, can be an
-#               absolute path or relative to $ONE_LOCATION/lib/mads (or
-#               /usr/lib/one/mads/ if OpenNebula was installed in /)
+#   executable : path of the information driver executable, can be an
+#                absolute path or relative to $ONE_LOCATION/lib/mads (or
+#                /usr/lib/one/mads/ if OpenNebula was installed in /)
 #
-#   arguments : for the driver executable, usually a probe configuration file,
-#               can be an absolute path or relative to $ONE_LOCATION/etc (or
-#               /etc/one/ if OpenNebula was installed in /)
+#   arguments  : for the monitor daemon
+#     -c : configuration file (monitord.conf by default)
+#
+#   threads    : number of threads used to process messages from monitor daemon
 #*******************************************************************************
-
-#-------------------------------------------------------------------------------
-#  Information Collector for KVM IM's.
-#-------------------------------------------------------------------------------
-#  This driver CANNOT BE ASSIGNED TO A HOST, and needs to be used with KVM
-#    -h  prints this help.
-#    -a  Address to bind the collectd socket (default 0.0.0.0)
-#    -p  UDP port to listen for monitor information (default 4124)
-#    -f  Interval in seconds to flush collected information (default 5)
-#    -t  Number of threads for the server (default 50)
-#    -i  Time in seconds of the monitorization push cycle. This parameter must
-#        be smaller than MONITORING_INTERVAL_HOST, otherwise push monitorization will
-#        not be effective.
-#    -w  Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
 IM_MAD = [
-      NAME       = "collectd",
-      EXECUTABLE = "collectd",
-      ARGUMENTS  = "-p 4124 -f 5 -t 50 -i 60" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  KVM UDP-push Information Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of hosts monitored at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
-IM_MAD = [
-      NAME          = "kvm",
-      SUNSTONE_NAME = "KVM",
-      EXECUTABLE    = "one_im_ssh",
-      ARGUMENTS     = "-r 3 -t 15 -w 90 kvm" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  KVM SSH-pull Information Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of hosts monitored at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
-# IM_MAD = [
-#       NAME          = "kvm",
-#       SUNSTONE_NAME = "kvm-ssh",
-#       EXECUTABLE    = "one_im_ssh",
-#       ARGUMENTS     = "-r 3 -t 15 -w 90 kvm-probes" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  vCenter Information Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of hosts monitored at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
-IM_MAD = [
-      NAME          = "vcenter",
-      SUNSTONE_NAME = "VMWare vCenter",
-      EXECUTABLE    = "one_im_sh",
-      ARGUMENTS     = "-c -t 15 -r 0 vcenter" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  EC2 Information Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of hosts monitored at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
-#IM_MAD = [
-#      NAME          = "ec2",
-#      SUNSTONE_NAME = "Amazon EC2",
-#      EXECUTABLE    = "one_im_sh",
-#      ARGUMENTS     = "-c -t 1 -r 0 -w 600 ec2" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  Azure Information Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of hosts monitored at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
-#IM_MAD = [
-#      NAME          = "az",
-#      SUNSTONE_NAME = "Microsoft Azure",
-#      EXECUTABLE    = "one_im_sh",
-#      ARGUMENTS     = "-c -t 1 -r 0 az" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  Hybrid OpenNebula Information Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of hosts monitored at the same time
-#-------------------------------------------------------------------------------
-# IM_MAD = [
-#       NAME          = "one",
-#       SUNSTONE_NAME = "OpenNebula",
-#       EXECUTABLE    = "one_im_sh",
-#       ARGUMENTS     = "-c -t 1 -r 0 one" ]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  Dummy Information Driver Manager Configuration
-#-------------------------------------------------------------------------------
-#IM_MAD = [ NAME="dummy", SUNSTONE_NAME="Testing", EXECUTABLE="one_im_dummy"]
-#-------------------------------------------------------------------------------
+      NAME       = "monitord",
+      EXECUTABLE = "onemonitord",
+      ARGUMENTS  = "-c monitord.conf",
+      THREADS    = 8 ]
 
 #*******************************************************************************
 # Virtualization Driver Configuration
@@ -486,6 +389,10 @@ IM_MAD = [
 #
 #   keep_snapshots: do not remove snapshots on power on/off cycles and live
 #   migrations if the hypervisor supports that.
+#
+#   live_resize: [yes|no] Hypervisor supports hotplug VCPU and memory
+#
+#   support_shareable: [yes|no] Hypervisor supports shareable disks
 #
 #   imported_vms_actions : comma-separated list of actions supported
 #                          for imported vms. The available actions are:
@@ -524,6 +431,8 @@ IM_MAD = [
 #        overridden for each action.
 #        Valid actions: deploy, shutdown, cancel, save, restore, migrate, poll
 #        An example: "-l migrate=migrate_local,save"
+#    -d <actions> comma separated list of actions which forward SSH agent
+#        from frontend to remote host (default migrate)
 #    -p more than one action per host in parallel, needs support from hypervisor
 #    -s <shell> to execute remote commands, bash by default
 #    -w Timeout in seconds to execute external commands (default unlimited)
@@ -538,10 +447,108 @@ VM_MAD = [
     ARGUMENTS      = "-t 15 -r 0 kvm",
     DEFAULT        = "vmm_exec/vmm_exec_kvm.conf",
     TYPE           = "kvm",
-    KEEP_SNAPSHOTS = "no",
+    KEEP_SNAPSHOTS = "yes",
+    LIVE_RESIZE    = "yes",
+    SUPPORT_SHAREABLE    = "yes",
     IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
         resume, delete, reboot, reboot-hard, resched, unresched, disk-attach,
         disk-detach, nic-attach, nic-detach, snapshot-create, snapshot-delete"
+]
+
+# This variant should be used for nested virtualization
+VM_MAD = [
+    NAME           = "qemu",
+    SUNSTONE_NAME  = "QEMU",
+    EXECUTABLE     = "one_vmm_exec",
+    ARGUMENTS      = "-t 15 -r 0 kvm",
+    DEFAULT        = "vmm_exec/vmm_exec_kvm.conf",
+    TYPE           = "qemu",
+    KEEP_SNAPSHOTS = "yes",
+    LIVE_RESIZE    = "yes",
+    SUPPORT_SHAREABLE    = "yes",
+    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
+        resume, delete, reboot, reboot-hard, resched, unresched, disk-attach,
+        disk-detach, nic-attach, nic-detach, snapshot-create, snapshot-delete"
+]
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#  LXD Virtualization Driver Manager Configuration
+#    -r number of retries when monitoring a host
+#    -t number of threads, i.e. number of hosts monitored at the same time
+#    -l <actions[=command_name]> actions executed locally, command can be
+#        overridden for each action.
+#        Valid actions: deploy, shutdown, cancel, save, restore, migrate, poll
+#        An example: "-l migrate=migrate_local,save"
+#    -d <actions> comma separated list of actions which forward SSH agent
+#        from frontend to remote host (default migrate)
+#    -p more than one action per host in parallel, needs support from hypervisor
+#    -s <shell> to execute remote commands, bash by default
+#    -w Timeout in seconds to execute external commands (default unlimited)
+#
+#-------------------------------------------------------------------------------
+VM_MAD = [
+    NAME           = "lxd",
+    SUNSTONE_NAME  = "LXD",
+    EXECUTABLE     = "one_vmm_exec",
+    ARGUMENTS      = "-t 15 -r 0 lxd",
+    # DEFAULT        = "vmm_exec/vmm_exec_lxd.conf",
+    TYPE           = "xml",
+    KEEP_SNAPSHOTS = "no",
+    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, reboot, reboot-hard, poweroff, poweroff-hard, suspend, resume, stop, delete,  nic-attach, nic-detach"
+]
+
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#  LXC Virtualization Driver Manager Configuration
+#    -r number of retries when monitoring a host
+#    -t number of threads, i.e. number of hosts monitored at the same time
+#    -l <actions[=command_name]> actions executed locally, command can be
+#        overridden for each action.
+#        Valid actions: deploy, shutdown, cancel, save, restore, migrate, poll
+#        An example: "-l migrate=migrate_local,save"
+#    -d <actions> comma separated list of actions which forward SSH agent
+#        from frontend to remote host (default migrate)
+#    -p more than one action per host in parallel, needs support from hypervisor
+#    -s <shell> to execute remote commands, bash by default
+#    -w Timeout in seconds to execute external commands (default unlimited)
+#
+#-------------------------------------------------------------------------------
+VM_MAD = [
+    NAME           = "lxc",
+    SUNSTONE_NAME  = "LXC",
+    EXECUTABLE     = "one_vmm_exec",
+    ARGUMENTS      = "-t 15 -r 0 lxc",
+    # DEFAULT        = "vmm_exec/vmm_exec_lxc.conf",
+    TYPE           = "xml",
+    KEEP_SNAPSHOTS = "no",
+    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, reboot, reboot-hard, poweroff, poweroff-hard, suspend, resume, stop, delete,  nic-attach, nic-detach"
+]
+
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#  Firecracker Virtualization Driver Manager Configuration
+#    -r number of retries when monitoring a host
+#    -t number of threads, i.e. number of hosts monitored at the same time
+#    -l <actions[=command_name]> actions executed locally, command can be
+#        overridden for each action.
+#        Valid actions: deploy, shutdown, cancel, save, restore, migrate, poll
+#        An example: "-l migrate=migrate_local,save"
+#    -d <actions> comma separated list of actions which forward SSH agent
+#        from frontend to remote host (default migrate)
+#    -p more than one action per host in parallel, needs support from hypervisor
+#    -s <shell> to execute remote commands, bash by default
+#    -w Timeout in seconds to execute external commands (default unlimited)
+#-------------------------------------------------------------------------------
+VM_MAD = [
+    NAME           = "firecracker",
+    SUNSTONE_NAME  = "Firecracker",
+    EXECUTABLE     = "one_vmm_exec",
+    ARGUMENTS      = "-t 15 -r 0 firecracker",
+    TYPE           = "xml",
+    KEEP_SNAPSHOTS = "no"
 ]
 
 #-------------------------------------------------------------------------------
@@ -552,84 +559,24 @@ VM_MAD = [
 #    -t number of threads, i.e. number of hosts monitored at the same time
 #    -p more than one action per host in parallel, needs support from hypervisor
 #    -s <shell> to execute commands, bash by default
-#    -d default snapshot strategy. It can be either 'detach' or 'suspend'. It
-#       defaults to 'suspend'.
 #    -w Timeout in seconds to execute external commands (default unlimited)
 #-------------------------------------------------------------------------------
 VM_MAD = [
-    NAME           = "vcenter",
-    SUNSTONE_NAME  = "VMWare vCenter",
-    EXECUTABLE     = "one_vmm_sh",
-    ARGUMENTS      = "-p -t 15 -r 0 vcenter -s sh",
-    DEFAULT        = "vmm_exec/vmm_exec_vcenter.conf",
-    TYPE           = "xml",
-    KEEP_SNAPSHOTS = "yes",
+    NAME              = "vcenter",
+    SUNSTONE_NAME     = "VMWare vCenter",
+    EXECUTABLE        = "one_vmm_sh",
+    ARGUMENTS         = "-p -t 15 -r 0 -s sh vcenter",
+    TYPE              = "xml",
+    KEEP_SNAPSHOTS    = "yes",
+    DS_LIVE_MIGRATION = "yes",
+    COLD_NIC_ATTACH   = "yes",
+    LIVE_RESIZE       = "yes",
     IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
         resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
         poweroff-hard, disk-attach, disk-detach, nic-attach, nic-detach,
         snapshot-create, snapshot-delete, migrate, live-migrate"
 ]
 #-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  EC2 Virtualization Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of actions performed at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#    -p more than one action per host in parallel, needs support from hypervisor
-#-------------------------------------------------------------------------------
-#VM_MAD = [
-#    NAME           = "ec2",
-#    SUNSTONE_NAME  = "Amazon EC2",
-#    EXECUTABLE     = "one_vmm_sh",
-#    ARGUMENTS      = "-t 15 -r 0 -w 600 -p ec2",
-#    TYPE           = "xml",
-#    KEEP_SNAPSHOTS = "no",
-#    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
-#        resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
-#        poweroff-hard, disk-attach, disk-detach, nic-attach, nic-detach,
-#        snap-create, snap-delete"
-#]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  Azure Virtualization Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of actions performed at the same time
-#    -w Timeout in seconds to execute external commands (default unlimited)
-#-------------------------------------------------------------------------------
-#VM_MAD = [
-#    NAME           = "az",
-#    SUNSTONE_NAME  = "Microsoft Azure",
-#    EXECUTABLE     = "one_vmm_sh",
-#    ARGUMENTS      = "-t 15 -r 0 az",
-#    TYPE           = "xml",
-#    KEEP_SNAPSHOTS = "no",
-#    IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
-#        resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
-#        poweroff-hard, disk-attach, disk-detach, nic-attach, nic-detach,
-#        snap-create, snap-delete"
-#]
-#-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-#  Hybrid OpenNebula Virtualization Driver Manager Configuration
-#    -r number of retries when monitoring a host
-#    -t number of threads, i.e. number of actions performed at the same time
-#-------------------------------------------------------------------------------
-# VM_MAD = [
-#     NAME           = "one",
-#     SUNSTONE_NAME  = "OpenNebula",
-#     EXECUTABLE     = "one_vmm_sh",
-#     ARGUMENTS      = "-t 15 -r 0 one",
-#     TYPE           = "xml",
-#     KEEP_SNAPSHOTS = "no",
-#     IMPORTED_VMS_ACTIONS = "terminate, terminate-hard, hold, release, suspend,
-#         resume, delete, reboot, reboot-hard, resched, unresched, poweroff,
-#         poweroff-hard"
-# ]
-#-------------------------------------------------------------------------------
-
 
 #-------------------------------------------------------------------------------
 #  Dummy Virtualization Driver Configuration
@@ -697,7 +644,7 @@ DATASTORE_MAD = [
 
 MARKET_MAD = [
     EXECUTABLE = "one_market",
-    ARGUMENTS  = "-t 15 -m http,s3,one"
+    ARGUMENTS  = "-t 15 -m http,s3,one,linuxcontainers,turnkeylinux,dockerhub"
 ]
 
 #*******************************************************************************
@@ -715,7 +662,7 @@ MARKET_MAD = [
 
 IPAM_MAD = [
     EXECUTABLE = "one_ipam",
-    ARGUMENTS  = "-t 1 -i dummy"
+    ARGUMENTS  = "-t 1 -i dummy,aws,packet"
 ]
 
 #*******************************************************************************
@@ -733,134 +680,20 @@ IPAM_MAD = [
 #               to $ONE_LOCATION/etc (or /etc/one/ if OpenNebula was installed
 #               in /)
 #
-# Virtual Machine Hooks (VM_HOOK)
-# -------------------------------
-#
-# Defined by:
-#   name      : for the hook, useful to track the hook (OPTIONAL)
-#   on        : when the hook should be executed,
-#               - CREATE, when the VM is created (onevm create)
-#               - PROLOG, when the VM is in the prolog state
-#               - RUNNING, after the VM is successfully booted
-#               - UNKNOWN, when the VM is in the unknown state
-#               - SHUTDOWN, after the VM is shutdown
-#               - STOP, after the VM is stopped (including VM image transfers)
-#               - DONE, after the VM is deleted or shutdown
-#               - CUSTOM, user defined specific STATE and LCM_STATE combination
-#                 of states to trigger the hook.
-#   command   : path is relative to $ONE_LOCATION/var/remotes/hook
-#               (self-contained) or to /var/lib/one/remotes/hook (system-wide).
-#               That directory will be copied on the hosts under
-#               SCRIPTS_REMOTE_DIR. It can be an absolute path that must exist
-#               on the target host
-#   arguments : for the hook. You can access to VM information with $
-#               - $ID, the ID of the virtual machine
-#               - $TEMPLATE, the VM template in xml and base64 encoded
-#               - $PREV_STATE, the previous STATE of the Virtual Machine
-#               - $PREV_LCM_STATE, the previous LCM STATE of the Virtual Machine
-#   remote    : values,
-#               - YES, The hook is executed in the host where the VM was
-#                 allocated
-#               - NO, The hook is executed in the OpenNebula server (default)
-#
-# Example Virtual Machine Hook
-# ----------------------------
-#
-# VM_HOOK = [
-#   name      = "advanced_hook",
-#   on        = "CUSTOM",
-#   state     = "ACTIVE",
-#   lcm_state = "BOOT_UNKNOWN",
-#   command   = "log.rb",
-#   arguments = "$ID $PREV_STATE $PREV_LCM_STATE" ]
-#
-# Host Hooks (HOST_HOOK)
-# -------------------------------
-#
-# Defined by:
-#   name      : for the hook, useful to track the hook (OPTIONAL)
-#   on        : when the hook should be executed,
-#               - CREATE, when the Host is created (onehost create)
-#               - ERROR, when the Host enters the error state
-#               - DISABLE, when the Host is disabled
-#   command   : path is relative to $ONE_LOCATION/var/remotes/hook
-#               (self-contained) or to /var/lib/one/remotes/hook (system-wide).
-#               That directory will be copied on the hosts under
-#               SCRIPTS_REMOTE_DIR. It can be an absolute path that must exist
-#               on the target host.
-#   arguments : for the hook. You can use the following Host information:
-#               - $ID, the ID of the host
-#               - $TEMPLATE, the Host template in xml and base64 encoded
-#   remote    : values,
-#               - YES, The hook is executed in the host
-#               - NO, The hook is executed in the OpenNebula server (default)
-#
-# Virtual Network (VNET_HOOK)
-# Virtual Router (VROUTER_HOOK)
-# User (USER_HOOK)
-# Group (GROUP_HOOK)
-# Image (IMAGE_HOOK)
-# -------------------------------
-#
-# These hooks are executed when one of the referring entities are created or
-# removed. Each hook is defined by:
-#   name      : for the hook, useful to track the hook (OPTIONAL)
-#   on        : when the hook should be executed,
-#               - CREATE, when the vnet is created
-#               - REMOVE, when the vnet is removed
-#   command   : path is relative to $ONE_LOCATION/var/remotes/hook
-#               (self-contained) or to /var/lib/one/remotes/hook (system-wide).
-#               That directory will be copied on the hosts under
-#               SCRIPTS_REMOTE_DIR. It can be an absolute path that must exist
-#               on the target host.
-#   arguments : for the hook. You can use the following Host information:
-#               - $ID, the ID of the host
-#               - $TEMPLATE, the vnet template in xml and base64 encoded
-#
-# Please note: In a Federation, User and Group hooks can only be defined in
-# the master OpenNebula.
-#-------------------------------------------------------------------------------
 
 HM_MAD = [
-    EXECUTABLE = "one_hm" ]
-
-#VNET_HOOK = [
-#    name      = "vcenter_net_create",
-#    on        = "CREATE",
-#    command   = "vcenter/create_vcenter_net.rb",
-#    arguments = "$ID $TEMPLATE"]
-
-#VNET_HOOK = [
-#    name      = "vcenter_net_delete",
-#    on        = "REMOVE",
-#    command   = "vcenter/delete_vcenter_net.rb",
-#    arguments = "$ID $TEMPLATE"]
+    EXECUTABLE = "one_hm",
+    ARGUMENTS = "-p 2101 -l 2102 -b 127.0.0.1"]
 
 #*******************************************************************************
-# Fault Tolerance Hooks
-#*******************************************************************************
-# This hook is used to perform recovery actions when a host fails.
-# Script to implement host failure tolerance
-#   One of the following modes must be chosen
-#           -m resched VMs to another host. (Only for images in shared storage!)
-#           -r recreate VMs running in the host. State will be lost.
-#           -d delete VMs running in the host
-#
-#   Additional flags
-#           -f resubmit suspended and powered off VMs (only for recreate)
-#           -p <n> avoid resubmission if host comes back after n monitoring
-#                 cycles. 0 to disable it. Default is 2.
-#           -u disables fencing. Fencing is enabled by default. Don't disable it
-#                 unless you are very sure about what you're doing
+# Hook Log Configuration
 #*******************************************************************************
 #
-#HOST_HOOK = [
-#    NAME      = "error",
-#    ON        = "ERROR",
-#    COMMAND   = "ft/host_error.rb",
-#    ARGUMENTS = "$ID -m -p 5",
-#    REMOTE    = "no" ]
-#-------------------------------------------------------------------------------
+# LOG_RETENTION: Number of execution records saved in the database for each hook.
+#
+
+HOOK_LOG_CONF = [
+    LOG_RETENTION = 20 ]
 
 #*******************************************************************************
 # Auth Manager Configuration
@@ -1002,6 +835,9 @@ VM_RESTRICTED_ATTR = "CONTEXT/FILES"
 VM_RESTRICTED_ATTR = "NIC/MAC"
 VM_RESTRICTED_ATTR = "NIC/VLAN_ID"
 VM_RESTRICTED_ATTR = "NIC/BRIDGE"
+VM_RESTRICTED_ATTR = "NIC/FILTER"
+VM_RESTRICTED_ATTR = "NIC/FILTER_IP_SPOOFING"
+VM_RESTRICTED_ATTR = "NIC/FILTER_MAC_SPOOFING"
 VM_RESTRICTED_ATTR = "NIC/INBOUND_AVG_BW"
 VM_RESTRICTED_ATTR = "NIC/INBOUND_PEAK_BW"
 VM_RESTRICTED_ATTR = "NIC/INBOUND_PEAK_KB"
@@ -1012,9 +848,26 @@ VM_RESTRICTED_ATTR = "NIC/OPENNEBULA_MANAGED"
 VM_RESTRICTED_ATTR = "NIC/VCENTER_INSTANCE_ID"
 VM_RESTRICTED_ATTR = "NIC/VCENTER_NET_REF"
 VM_RESTRICTED_ATTR = "NIC/VCENTER_PORTGROUP_TYPE"
+VM_RESTRICTED_ATTR = "NIC/EXTERNAL"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/MAC"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/VLAN_ID"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/BRIDGE"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/INBOUND_AVG_BW"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/INBOUND_PEAK_BW"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/INBOUND_PEAK_KB"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/OUTBOUND_AVG_BW"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/OUTBOUND_PEAK_BW"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/OUTBOUND_PEAK_KB"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/OPENNEBULA_MANAGED"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/VCENTER_INSTANCE_ID"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/VCENTER_NET_REF"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/VCENTER_PORTGROUP_TYPE"
+VM_RESTRICTED_ATTR = "NIC_ALIAS/EXTERNAL"
 VM_RESTRICTED_ATTR = "NIC_DEFAULT/MAC"
 VM_RESTRICTED_ATTR = "NIC_DEFAULT/VLAN_ID"
 VM_RESTRICTED_ATTR = "NIC_DEFAULT/BRIDGE"
+VM_RESTRICTED_ATTR = "NIC_DEFAULT/FILTER"
+VM_RESTRICTED_ATTR = "NIC_DEFAULT/EXTERNAL"
 VM_RESTRICTED_ATTR = "DISK/TOTAL_BYTES_SEC"
 VM_RESTRICTED_ATTR = "DISK/TOTAL_BYTES_SEC_MAX_LENGTH"
 VM_RESTRICTED_ATTR = "DISK/TOTAL_BYTES_SEC_MAX"
@@ -1033,12 +886,14 @@ VM_RESTRICTED_ATTR = "DISK/READ_IOPS_SEC_MAX"
 VM_RESTRICTED_ATTR = "DISK/WRITE_IOPS_SEC"
 VM_RESTRICTED_ATTR = "DISK/WRITE_IOPS_SEC_MAX_LENGTH"
 VM_RESTRICTED_ATTR = "DISK/WRITE_IOPS_SEC_MAX"
+VM_RESTRICTED_ATTR = "DISK/SIZE_IOPS_SEC"
 VM_RESTRICTED_ATTR = "DISK/OPENNEBULA_MANAGED"
 VM_RESTRICTED_ATTR = "DISK/VCENTER_DS_REF"
 VM_RESTRICTED_ATTR = "DISK/VCENTER_INSTANCE_ID"
 #VM_RESTRICTED_ATTR = "DISK/SIZE"
 VM_RESTRICTED_ATTR = "DISK/ORIGINAL_SIZE"
 VM_RESTRICTED_ATTR = "DISK/SIZE_PREV"
+VM_RESTRICTED_ATTR = "DEPLOY_ID"
 VM_RESTRICTED_ATTR = "CPU_COST"
 VM_RESTRICTED_ATTR = "MEMORY_COST"
 VM_RESTRICTED_ATTR = "DISK_COST"
@@ -1051,6 +906,8 @@ VM_RESTRICTED_ATTR = "USER_INPUTS/MEMORY"
 VM_RESTRICTED_ATTR = "USER_INPUTS/VCPU"
 VM_RESTRICTED_ATTR = "VCENTER_VM_FOLDER"
 VM_RESTRICTED_ATTR = "VCENTER_ESX_HOST"
+VM_RESTRICTED_ATTR = "TOPOLOGY/PIN_POLICY"
+VM_RESTRICTED_ATTR = "TOPOLOGY/HUGEPAGE_SIZE"
 
 #VM_RESTRICTED_ATTR = "RANK"
 #VM_RESTRICTED_ATTR = "SCHED_RANK"
@@ -1073,11 +930,62 @@ VNET_RESTRICTED_ATTR = "CONF"
 VNET_RESTRICTED_ATTR = "BRIDGE_CONF"
 VNET_RESTRICTED_ATTR = "OVS_BRIDGE_CONF"
 VNET_RESTRICTED_ATTR = "IP_LINK_CONF"
+VNET_RESTRICTED_ATTR = "FILTER"
+VNET_RESTRICTED_ATTR = "FILTER_IP_SPOOFING"
+VNET_RESTRICTED_ATTR = "FILTER_MAC_SPOOFING"
 
 VNET_RESTRICTED_ATTR = "AR/VN_MAD"
 VNET_RESTRICTED_ATTR = "AR/PHYDEV"
 VNET_RESTRICTED_ATTR = "AR/VLAN_ID"
 VNET_RESTRICTED_ATTR = "AR/BRIDGE"
+VNET_RESTRICTED_ATTR = "AR/FILTER"
+VNET_RESTRICTED_ATTR = "AR/FILTER_IP_SPOOFING"
+VNET_RESTRICTED_ATTR = "AR/FILTER_MAC_SPOOFING"
+
+VNET_RESTRICTED_ATTR = "CLUSTER_IDS"
+
+VNET_RESTRICTED_ATTR = "EXTERNAL"
+
+USER_RESTRICTED_ATTR = "VM_USE_OPERATIONS"
+USER_RESTRICTED_ATTR = "VM_MANAGE_OPERATIONS"
+USER_RESTRICTED_ATTR = "VM_ADMIN_OPERATIONS"
+
+GROUP_RESTRICTED_ATTR = "VM_USE_OPERATIONS"
+GROUP_RESTRICTED_ATTR = "VM_MANAGE_OPERATIONS"
+GROUP_RESTRICTED_ATTR = "VM_ADMIN_OPERATIONS"
+
+#*******************************************************************************
+# Encrypted Attributes Configuration
+#*******************************************************************************
+# The following attributes are encrypted
+#*******************************************************************************
+
+HOST_ENCRYPTED_ATTR = "EC2_ACCESS"
+HOST_ENCRYPTED_ATTR = "EC2_SECRET"
+HOST_ENCRYPTED_ATTR = "AZ_SUB"
+HOST_ENCRYPTED_ATTR = "AZ_CLIENT"
+HOST_ENCRYPTED_ATTR = "AZ_SECRET"
+HOST_ENCRYPTED_ATTR = "AZ_TENANT"
+HOST_ENCRYPTED_ATTR = "VCENTER_PASSWORD"
+HOST_ENCRYPTED_ATTR = "NSX_PASSWORD"
+HOST_ENCRYPTED_ATTR = "ONE_PASSWORD"
+
+# CLUSTER_ENCRYPTED_ATTR = "PROVISION/PACKET_TOKEN"
+
+# DATASTORE_ENCRYPTED_ATTR = "PROVISION/PACKET_TOKEN"
+
+# VM_ENCRYPTED_ATTR = "PACKET_TOKEN
+# VM_ENCRYPTED_ATTR = "PROVISION/PACKET_TOKEN
+VM_ENCRYPTED_ATTR = "CONTEXT/PASSWORD"
+
+IMAGE_ENCRYPTED_ATTR = "LUKS_PASSWORD"
+
+# VNET_ENCRYPTED_ATTR = "PROVISION/PACKET_TOKEN
+# VNET_ENCRYPTED_ATTR = "PROVISION/PACKET_TOKEN
+# VNET_ENCRYPTED_ATTR = "PROVISION/PACKET_TOKEN
+
+# DDC encrypted attrs
+DOCUMENT_ENCRYPTED_ATTR = "PROVISION_BODY"
 
 #*******************************************************************************
 # Inherited Attributes Configuration
@@ -1105,6 +1013,7 @@ INHERIT_DATASTORE_ATTR  = "CEPH_SECRET"
 INHERIT_DATASTORE_ATTR  = "CEPH_KEY"
 INHERIT_DATASTORE_ATTR  = "CEPH_USER"
 INHERIT_DATASTORE_ATTR  = "CEPH_CONF"
+INHERIT_DATASTORE_ATTR  = "CEPH_TRASH"
 INHERIT_DATASTORE_ATTR  = "POOL_NAME"
 
 INHERIT_DATASTORE_ATTR  = "ISCSI_USER"
@@ -1115,6 +1024,7 @@ INHERIT_IMAGE_ATTR      = "ISCSI_USER"
 INHERIT_IMAGE_ATTR      = "ISCSI_USAGE"
 INHERIT_IMAGE_ATTR      = "ISCSI_HOST"
 INHERIT_IMAGE_ATTR      = "ISCSI_IQN"
+INHERIT_IMAGE_ATTR      = "LUKS_SECRET"
 
 INHERIT_DATASTORE_ATTR  = "GLUSTER_HOST"
 INHERIT_DATASTORE_ATTR  = "GLUSTER_VOLUME"
@@ -1134,9 +1044,11 @@ INHERIT_IMAGE_ATTR      = "VCENTER_ADAPTER_TYPE"
 INHERIT_IMAGE_ATTR      = "VCENTER_DISK_TYPE"
 
 INHERIT_VNET_ATTR       = "VLAN_TAGGED_ID"
+INHERIT_VNET_ATTR       = "FILTER"
 INHERIT_VNET_ATTR       = "FILTER_IP_SPOOFING"
 INHERIT_VNET_ATTR       = "FILTER_MAC_SPOOFING"
 INHERIT_VNET_ATTR       = "MTU"
+INHERIT_VNET_ATTR       = "METRIC"
 INHERIT_VNET_ATTR       = "INBOUND_AVG_BW"
 INHERIT_VNET_ATTR       = "INBOUND_PEAK_BW"
 INHERIT_VNET_ATTR       = "INBOUND_PEAK_KB"
@@ -1147,6 +1059,13 @@ INHERIT_VNET_ATTR       = "CONF"
 INHERIT_VNET_ATTR       = "BRIDGE_CONF"
 INHERIT_VNET_ATTR       = "OVS_BRIDGE_CONF"
 INHERIT_VNET_ATTR       = "IP_LINK_CONF"
+INHERIT_VNET_ATTR       = "EXTERNAL_IP"
+INHERIT_VNET_ATTR       = "EXTERNAL"
+INHERIT_VNET_ATTR       = "AWS_ALLOCATION_ID"
+INHERIT_VNET_ATTR       = "GATEWAY"
+INHERIT_VNET_ATTR       = "VXLAN_MODE"
+INHERIT_VNET_ATTR       = "VXLAN_TEP"
+INHERIT_VNET_ATTR       = "VXLAN_MC"
 
 INHERIT_VNET_ATTR       = "VCENTER_NET_REF"
 INHERIT_VNET_ATTR       = "VCENTER_SWITCH_NAME"
@@ -1177,7 +1096,20 @@ INHERIT_VNET_ATTR       = "VCENTER_INSTANCE_ID"
 #            among the different hosts or not. Valid values: "yes" or "no"
 #   ds_migrate : The driver allows migrations across datastores. Valid values:
 #               "yes" or "no". Note: THIS ONLY APPLIES TO SYSTEM DS.
-#   allow_orphans: Snapshots can live without parents
+#   allow_orphans: Snapshots can live without parents. Suported values:
+#        YES: Children can be orphan (no parent snapshot)
+#         |- snap_1
+#         |- snap_2
+#         |- snap_3
+#        NO: New snapshots are set active and child of the previous one
+#         |- snap_1
+#            |- snap_2
+#               |- snap_3
+#        MIXED: Snapshots are children of last snapshot reverted to
+#         |- snap_1 (<--- revert)
+#            |- snap_3
+#            |- snap_4
+#         |- snap_2
 #*******************************************************************************
 
 TM_MAD_CONF = [
@@ -1186,7 +1118,8 @@ TM_MAD_CONF = [
 ]
 
 TM_MAD_CONF = [
-    NAME = "lvm", LN_TARGET = "NONE", CLONE_TARGET = "SELF", SHARED = "YES"
+    NAME = "lvm", LN_TARGET = "NONE", CLONE_TARGET = "SELF", SHARED = "YES",
+    DRIVER = "raw"
 ]
 
 TM_MAD_CONF = [
@@ -1202,27 +1135,35 @@ TM_MAD_CONF = [
 
 TM_MAD_CONF = [
     NAME = "qcow2", LN_TARGET = "NONE", CLONE_TARGET = "SYSTEM", SHARED = "YES",
-    DRIVER = "qcow2"
+    DS_MIGRATE = "YES", TM_MAD_SYSTEM = "ssh", LN_TARGET_SSH = "SYSTEM",
+    CLONE_TARGET_SSH = "SYSTEM", DISK_TYPE_SSH = "FILE", DRIVER = "qcow2"
 ]
 
 TM_MAD_CONF = [
     NAME = "ssh", LN_TARGET = "SYSTEM", CLONE_TARGET = "SYSTEM", SHARED = "NO",
-    DS_MIGRATE = "YES"
+    DS_MIGRATE = "YES", ALLOW_ORPHANS="YES"
 ]
 
 TM_MAD_CONF = [
     NAME = "ceph", LN_TARGET = "NONE", CLONE_TARGET = "SELF", SHARED = "YES",
-    DS_MIGRATE = "NO", DRIVER = "raw", ALLOW_ORPHANS="yes", TM_MAD_SYSTEM = "ssh",
-    LN_TARGET_SSH = "SYSTEM", CLONE_TARGET_SSH = "SYSTEM", DISK_TYPE_SSH = "FILE"
+    DS_MIGRATE = "NO", DRIVER = "raw", ALLOW_ORPHANS="mixed",
+    TM_MAD_SYSTEM = "ssh,shared", LN_TARGET_SSH = "SYSTEM", CLONE_TARGET_SSH = "SYSTEM",
+    DISK_TYPE_SSH = "FILE", LN_TARGET_SHARED = "NONE",
+    CLONE_TARGET_SHARED = "SELF", DISK_TYPE_SHARED = "RBD"
 ]
 
 TM_MAD_CONF = [
     NAME = "iscsi_libvirt", LN_TARGET = "NONE", CLONE_TARGET = "SELF", SHARED = "YES",
-    DS_MIGRATE = "NO"
+    DS_MIGRATE = "NO", DRIVER = "raw"
 ]
 
 TM_MAD_CONF = [
-    NAME = "dev", LN_TARGET = "NONE", CLONE_TARGET = "NONE", SHARED = "YES"
+    NAME = "dev", LN_TARGET = "NONE", CLONE_TARGET = "NONE", SHARED = "YES",
+    TM_MAD_SYSTEM = "ssh,shared",
+    LN_TARGET_SSH = "SYSTEM", LN_TARGET_SHARED = "NONE",
+    DISK_TYPE_SSH = "FILE", DISK_TYPE_SHARED = "FILE",
+    CLONE_TARGET_SSH = "SYSTEM", CLONE_TARGET_SHARED =  "SELF",
+    DRIVER = "raw"
 ]
 
 TM_MAD_CONF = [
@@ -1319,18 +1260,50 @@ MARKET_MAD_CONF = [
     APP_ACTIONS = "create, delete, monitor"
 ]
 
+MARKET_MAD_CONF = [
+    NAME = "linuxcontainers",
+    SUNSTONE_NAME = "LinuxContainers.org",
+    REQUIRED_ATTRS = "",
+    APP_ACTIONS = "monitor",
+    PUBLIC = "yes"
+]
+
+MARKET_MAD_CONF = [
+    NAME = "turnkeylinux",
+    SUNSTONE_NAME = "TurnkeyLinux",
+    REQUIRED_ATTRS = "",
+    APP_ACTIONS = "monitor",
+    PUBLIC = "yes"
+]
+
+MARKET_MAD_CONF = [
+    NAME = "dockerhub",
+    SUNSTONE_NAME = "DockerHub",
+    REQUIRED_ATTRS = "",
+    APP_ACTIONS = "monitor",
+    PUBLIC = "yes"
+]
+
 #*******************************************************************************
 # Authentication Driver Behavior Definition
 #*******************************************************************************
 # The configuration for each driver is defined in AUTH_MAD_CONF. These
 # values must not be modified since they define the driver behavior.
 #   name            : name of the auth driver
+#
 #   password_change : allow the end users to change their own password. Oneadmin
 #                     can still change other user's passwords
+#
 #   driver_managed_groups : allow the driver to set the user's group even after
 #                     user creation. In this case addgroup, delgroup and chgrp
 #                     will be disabled, with the exception of chgrp to one of
 #                     the groups in the list of secondary groups
+#
+#   driver_managed_group_admin : when set to "NO" user needs to manage group
+#                     admin membership manually; when "YES" group admin
+#                     membership is managed by the auth driver
+#                     (see ldap_auth.conf)
+#
 #   max_token_time  : limit the maximum token validity, in seconds. Use -1 for
 #                     unlimited maximum, 0 to disable login tokens
 #*******************************************************************************
@@ -1339,6 +1312,7 @@ AUTH_MAD_CONF = [
     NAME = "core",
     PASSWORD_CHANGE = "YES",
     DRIVER_MANAGED_GROUPS = "NO",
+    DRIVER_MANAGED_GROUP_ADMIN = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
 
@@ -1346,6 +1320,7 @@ AUTH_MAD_CONF = [
     NAME = "public",
     PASSWORD_CHANGE = "NO",
     DRIVER_MANAGED_GROUPS = "NO",
+    DRIVER_MANAGED_GROUP_ADMIN = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
 
@@ -1353,6 +1328,7 @@ AUTH_MAD_CONF = [
     NAME = "ssh",
     PASSWORD_CHANGE = "YES",
     DRIVER_MANAGED_GROUPS = "NO",
+    DRIVER_MANAGED_GROUP_ADMIN = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
 
@@ -1360,6 +1336,7 @@ AUTH_MAD_CONF = [
     NAME = "x509",
     PASSWORD_CHANGE = "NO",
     DRIVER_MANAGED_GROUPS = "NO",
+    DRIVER_MANAGED_GROUP_ADMIN = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
 
@@ -1367,6 +1344,7 @@ AUTH_MAD_CONF = [
     NAME = "ldap",
     PASSWORD_CHANGE = "YES",
     DRIVER_MANAGED_GROUPS = "YES",
+    DRIVER_MANAGED_GROUP_ADMIN = "YES",
     MAX_TOKEN_TIME = "86400"
 ]
 
@@ -1374,6 +1352,7 @@ AUTH_MAD_CONF = [
     NAME = "server_cipher",
     PASSWORD_CHANGE = "NO",
     DRIVER_MANAGED_GROUPS = "NO",
+    DRIVER_MANAGED_GROUP_ADMIN = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
 
@@ -1381,6 +1360,66 @@ AUTH_MAD_CONF = [
     NAME = "server_x509",
     PASSWORD_CHANGE = "NO",
     DRIVER_MANAGED_GROUPS = "NO",
+    DRIVER_MANAGED_GROUP_ADMIN = "NO",
     MAX_TOKEN_TIME = "-1"
 ]
 
+#*******************************************************************************
+# Virtual Network Driver Behavior Definition
+#*******************************************************************************
+# The configuration for each driver is defined in VN_MAD_CONF. These
+# values must not be modified since they define the driver behavior.
+#   name        : name of the auth driver
+#   BRIDGE_TYPE : define the technology used by the driver
+#*******************************************************************************
+
+VN_MAD_CONF = [
+    NAME = "dummy",
+    BRIDGE_TYPE = "linux"
+]
+
+VN_MAD_CONF = [
+    NAME = "802.1Q",
+    BRIDGE_TYPE = "linux"
+]
+
+VN_MAD_CONF = [
+    NAME = "ebtables",
+    BRIDGE_TYPE = "linux"
+]
+
+VN_MAD_CONF = [
+    NAME = "fw",
+    BRIDGE_TYPE = "linux"
+]
+
+VN_MAD_CONF = [
+    NAME = "ovswitch",
+    BRIDGE_TYPE = "openvswitch"
+    #openvswitch or openvswitch_dpdk
+]
+
+VN_MAD_CONF = [
+    NAME = "vxlan",
+    BRIDGE_TYPE = "linux"
+]
+
+VN_MAD_CONF = [
+    NAME = "vcenter",
+    BRIDGE_TYPE = "vcenter_port_groups"
+]
+
+VN_MAD_CONF = [
+    NAME = "ovswitch_vxlan",
+    BRIDGE_TYPE = "openvswitch"
+]
+
+VN_MAD_CONF = [
+    NAME = "bridge",
+    BRIDGE_TYPE = "linux"
+]
+
+VN_MAD_CONF = [
+    NAME = "elastic",
+    BRIDGE_TYPE = "linux"
+]
