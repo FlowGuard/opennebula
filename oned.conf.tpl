@@ -74,7 +74,7 @@ DB = [ BACKEND = "mysql",
        PORT    = {{ MYSQL_PORT|default(3306) }},
        USER    = "{{ MYSQL_USER }}",
        PASSWD  = "{{ MYSQL_PASSWORD }}",
-       DB_NAME = "{{ MYSQL_DATABASE }}"
+       DB_NAME = "{{ MYSQL_DATABASE }}",
        CONNECTIONS = 25,
        COMPARE_BINARY = "no" ]
 
