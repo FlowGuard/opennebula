@@ -6,7 +6,7 @@ RUN DEBIAN_FRONTEND=noninteractive \
     apt-get update && \
     apt-get install -y curl wget openssh-server openssh-client lsb-release python3-pip ceph-common && \
     wget -q -O- https://downloads.opennebula.org/repo/Debian/repo.key | apt-key add - && \
-    echo "deb https://downloads.opennebula.io/repo/6.0/Ubuntu/20.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
+    echo "deb https://downloads.opennebula.io/repo/6.2/Ubuntu/20.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
     apt-get update && \
     apt-get install -y opennebula opennebula-sunstone opennebula-gate opennebula-flow opennebula-provision && \
     pip install envtpl && \
@@ -22,7 +22,7 @@ RUN echo > /etc/one/oned.conf && \
     rm /var/lib/one.orig/.one/* && \
     chown -R oneadmin /etc/ssh && \
     mkdir -p /var/run/sshd && \
-    mv /etc/one/sunstone-views /etc/sunstone-views 
+    mv /etc/one/sunstone-views /etc/sunstone-views
 
 EXPOSE 2222 2633 4124 9869 29876
 
