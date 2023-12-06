@@ -4,11 +4,11 @@ ENV container docker
 RUN DEBIAN_FRONTEND=noninteractive \
     ln -fs /usr/share/zoneinfo/Europe/Prague /etc/localtime && \
     apt-get update && \
-    apt-get install -y curl wget openssh-server openssh-client lsb-release python3-pip ceph-common && \
-    wget -q -O- https://downloads.opennebula.org/repo/Debian/repo.key | apt-key add - && \
-    echo "deb https://downloads.opennebula.io/repo/6.2/Ubuntu/20.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
+    apt-get install -y curl wget openssh-server openssh-client lsb-release python3-pip ceph-common vim net-tools mariadb-client && \
+    wget -q -O- https://downloads.opennebula.io/repo/repo2.key | apt-key add - && \
+    echo "deb https://downloads.opennebula.io/repo/6.6/Ubuntu/20.04 stable opennebula" > /etc/apt/sources.list.d/opennebula.list && \
     apt-get update && \
-    apt-get install -y opennebula opennebula-sunstone opennebula-gate opennebula-flow opennebula-provision && \
+    apt-get install -y opennebula opennebula-sunstone opennebula-gate opennebula-flow opennebula-provision opennebula-fireedge && \
     pip install envtpl && \
     apt-get clean
 
