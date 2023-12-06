@@ -25,6 +25,8 @@ fi
 
 one start
 sunstone-server start
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/share/one/guacd/lib
+fireedge-server start
 oneuser show
 
 exec tail -F /var/log/one/*.{log,error}
